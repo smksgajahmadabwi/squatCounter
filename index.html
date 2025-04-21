@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Simulasi Squat Interaktif - SMK</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      background: #121212;
+      font-family: 'Segoe UI', sans-serif;
+      color: white;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .title-box {
+      background: #263238;
+      border: 2px solid #00e676;
+      border-radius: 12px;
+      padding: 10px 20px;
+      margin-bottom: 20px;
+      text-align: center;
+      color: #00e676;
+      box-shadow: 0 0 10px #00e67655;
+      width: 940px;
+    }
+
+    .title-box h1 {
+      margin: 0;
+      font-size: 20px;
+    }
+
+    .main-content {
+      display: flex;
+      flex-direction: row;
+      gap: 20px;
+      align-items: stretch;
+    }
+
+    .frame-box {
+      background: #1e1e1e;
+      border: 2px solid #00c853;
+      border-radius: 12px;
+      box-shadow: 0 0 15px #00c85355;
+      padding: 10px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .video-box {
+      width: 640px;
+      height: 480px;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      border-radius: 10px;
+    }
+
+    video {
+      display: none;
+    }
+
+    .scoreboard {
+      width: 280px;
+      height: 480px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .info-item {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Orbitron', monospace;
+      background-color: black;
+      border: 2px inset #00ff99;
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+    }
+
+    .info-item h2 {
+      font-size: 24px;
+      margin-bottom: 10px;
+      color: #00ff99;
+    }
+
+    .info-item span {
+      font-size: 64px;
+      color: #00ff99;
+    }
+
+    .buttons {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
+      gap: 10px;
+    }
+
+    .button {
+      padding: 10px 20px;
+      background-color: #00c853;
+      border: none;
+      border-radius: 5px;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+
+    .button:hover {
+      background-color: #00e676;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="title-box">
+    <h1>SQUAT COUNTER BERBASIS POSE DETECTION (KECERDASAN BUATAN)</h1>
+    <h1>OLEH TIM GURU OLAH RAGA SMK GAJAH MADA BANYUWANGI</h1>
+  </div>
+
+  <div class="main-content">
+    <div class="frame-box video-box">
+      <canvas id="canvas"></canvas>
+      <video id="video" autoplay muted playsinline></video>
+    </div>
+
+    <div class="frame-box scoreboard">
+      <div class="info-item">
+        <h2>SQUAT</h2>
+        <span id="count">0</span>
+      </div>
+      <div class="info-item">
+        <h2>TIMER</h2>
+        <span id="timer">60</span>
+      </div>
+      <div class="buttons">
+        <button id="startButton" class="button">START</button>
+        <button id="resetButton" class="button">RESET</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const countEl = document.getElementById('count');
+    const timerEl = document.getElementById('timer');
+    const startButton = document.getElementById('startButton');
+    const resetButton = document.getElementById('resetButton');
+
+    let squatCount = 0;
+    let isSquatting = false;
+    let timer = 60;
+    let countdown;
+
+    async function setupCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 640, height: 480 },
+        audio: false
+      });
+      video.srcObject = stream;
+      return new Promise(resolve => {
+        video.onloadedmetadata = () => resolve(video);
+      });
+    }
+
+    async function main() {
+      await setupCamera();
+      video.play();
+      const detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet);
+      canvas.width = 640;
+      canvas.height = 480;
+
+      const connection = [
+        ['left_shoulder', 'left_elbow'], ['left_elbow', 'left_wrist'],
+        ['right_shoulder', 'right_elbow'], ['right_elbow', 'right_wrist'],
+        ['left_hip', 'left_knee'], ['left_knee', 'left_ankle'],
+        ['right_hip', 'right_knee'], ['right_knee', 'right_ankle'],
+        ['left_shoulder', 'right_shoulder'],
+        ['left_hip', 'right_hip'],
+        ['nose', 'left_eye'], ['nose', 'right_eye'], ['left_eye', 'left_ear'], ['right_eye', 'right_ear']
+      ];
+
+      async function detectPose() {
+        const poses = await detector.estimatePoses(video);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        poses.forEach(pose => {
+          pose.keypoints.forEach(kp => {
+            if (kp.score > 0.5) {
+              ctx.beginPath();
+              ctx.arc(kp.x, kp.y, 5, 0, 2 * Math.PI);
+              ctx.fillStyle = '#00c853';
+              ctx.fill();
+            }
+          });
+
+          connection.forEach(([start, end]) => {
+            const startPoint = pose.keypoints.find(k => k.name === start);
+            const endPoint = pose.keypoints.find(k => k.name === end);
+
+            if (startPoint && endPoint && startPoint.score > 0.5 && endPoint.score > 0.5) {
+              ctx.beginPath();
+              ctx.moveTo(startPoint.x, startPoint.y);
+              ctx.lineTo(endPoint.x, endPoint.y);
+              ctx.strokeStyle = '#00c853';
+              ctx.lineWidth = 2;
+              ctx.stroke();
+            }
+          });
+
+          const leftHip = pose.keypoints.find(k => k.name === 'left_hip');
+          const rightHip = pose.keypoints.find(k => k.name === 'right_hip');
+
+          if (leftHip && rightHip && leftHip.score > 0.5 && rightHip.score > 0.5) {
+            const avgY = (leftHip.y + rightHip.y) / 2;
+
+            if (avgY > 400 && !isSquatting) {
+              isSquatting = true;
+            }
+            if (avgY < 320 && isSquatting) {
+              squatCount++;
+              countEl.textContent = squatCount;
+              isSquatting = false;
+            }
+          }
+        });
+
+        if (timer > 0) requestAnimationFrame(detectPose);
+      }
+
+      detectPose();
+    }
+
+    function startTimer() {
+      countdown = setInterval(() => {
+        if (timer > 0) {
+          timer--;
+          timerEl.textContent = timer;
+        } else {
+          clearInterval(countdown);
+          alert("Latihan selesai! Total squat: " + squatCount);
+        }
+      }, 1000);
+    }
+
+    function reset() {
+      clearInterval(countdown);
+      squatCount = 0;
+      timer = 60;
+      countEl.textContent = squatCount;
+      timerEl.textContent = timer;
+    }
+
+    startButton.addEventListener('click', () => {
+      startTimer();
+    });
+
+    resetButton.addEventListener('click', reset);
+
+    window.onload = main;
+  </script>
+
+</body>
+</html>
